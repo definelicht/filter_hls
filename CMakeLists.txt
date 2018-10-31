@@ -1,5 +1,5 @@
 # Author:  Johannes de Fine Licht (definelicht@inf.ethz.ch)
-# Created: June 2017
+# Created: October 2018 
 
 cmake_minimum_required(VERSION 3.0)
 project(sdaccel_filter)

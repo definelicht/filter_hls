@@ -1,42 +1,55 @@
 /// @author    Johannes de Fine Licht (definelicht@inf.ethz.ch)
-/// @date      June 2017 
+/// @date      October 2018 
 /// @copyright This software is copyrighted under the BSD 3-Clause License. 
 
 #include "Filter.h"
-#include <algorithm>
 #include <iostream>
 #include <random>
-#include <type_traits>
 #include <vector>
+#include <string>
 
-int main() {
+int main(int, char **argv) {
 
-  std::vector<MemoryPack_t> data;
+  const float ratio = std::stof(argv[1]); 
+
+  std::default_random_engine rng(5);
+  std::uniform_real_distribution<Data_t> dist(0, 1);
+
+  std::cout << "Initializing memory...\n" << std::flush;
+  std::vector<Data_t> reference_input(kN);
+  std::vector<MemoryPack_t> input(kN / kMemoryWidth);
+
+  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+    for (int j = 0; j < kMemoryWidth; ++j) {
+      reference_input[i * kMemoryWidth + j] = dist(rng);
+    }
+    input[i].Pack(&reference_input[i * kMemoryWidth]);
+  }
+
+  std::vector<Data_t> reference_output(kN, 0);
   std::vector<MemoryPack_t> output(kN / kMemoryWidth,
                                    MemoryPack_t(static_cast<Data_t>(0)));
 
-  const Data_t data_raw[] = {0, 1, 2, 0, 0, 0, 3, 4,
-                             5, 0, 0, 6, 7, 8, 0, 0,
-                             9, 10, 11, 12, 13, 14, 15, 16,
-                             17, 18, 19, 20, 21, 22, 23, 24,
-                             0, 0, 0, 0, 0, 0, 0, 0,
-                             25, 26, 0, 0, 0, 0, 0, 27,
-                             28, 29, 30, 31, 32, 33, 34, 35,
-                             0, 0, 36, 37, 38, 39, 40, 0};
-  for (int i = 0; i < kN / kMemoryWidth; ++i) {
-    data.emplace_back(data_raw + i * kMemoryWidth);
-  }
+  std::cout << "Running simulation...\n" << std::flush;
+  FilterKernel(input.data(), output.data(), ratio);
 
-  std::cout << "Running hardware emulation..." << std::flush;
-  FilterKernel(data.data(), output.data(), 0.5);
-  std::cout << " Done.\n";
+  std::cout << "Running reference implementation...\n" << std::flush;
+  ReferenceImplementation(reference_input.data(), reference_output.data(),
+                          ratio);
 
   std::cout << "Verifying results..." << std::endl;
-  for (int i = 0; i < kN; ++i) {
-    std::cout << output[i / kMemoryWidth][i % kMemoryWidth] << " "; 
+  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+    const auto pack = output[i];
+    for (int j = 0; j < kMemoryWidth; ++j) {
+      // std::cout << pack[j] << " / " << reference_output[i * kMemoryWidth + j]
+      //           << "\n";
+      if (pack[j] != reference_output[i * kMemoryWidth + j]) {
+        std::cerr << "Verification failed.\n" << std::flush;
+        return 1;
+      }
+    }
   }
-  std::cout << "\n";
-  // std::cout << "Successfully verified.\n";
+  std::cout << "Successfully verified.\n";
 
   return 0;
 }
