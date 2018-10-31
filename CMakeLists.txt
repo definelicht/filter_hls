@@ -70,7 +70,6 @@ add_custom_target(synthesis COMMAND ${SDAccel_VIVADO_HLS} -f Synthesis.tcl)
 
 # Hardware kernel
 set(FILTER_XOCC_COMMAND
-  -t hw
   -s
   -O3
   ${FILTER_XOCC_FLAGS}
@@ -90,8 +89,7 @@ endif()
 if(FILTER_ENABLE_DEBUGGING)
   set(FILTER_XOCC_COMMAND ${FILTER_XOCC_COMMAND}
     --dk chipscope:FilterKernel_1:M_AXI_GMEM0
-    --dk chipscope:FilterKernel_1:M_AXI_GMEM1
-    --dk chipscope:FilterKernel_1:M_AXI_GMEM2)
+    --dk chipscope:FilterKernel_1:M_AXI_GMEM1)
 endif()
 if(FILTER_TARGET_CLOCK GREATER 0)
   set(FILTER_XOCC_COMMAND ${FILTER_XOCC_COMMAND}
@@ -99,17 +97,24 @@ if(FILTER_TARGET_CLOCK GREATER 0)
 endif()
 set(FILTER_XOCC_COMMAND ${FILTER_XOCC_COMMAND}
   --sp ${FILTER_KERNEL_NAME}_1.m_axi_gmem0:bank0
-  --sp ${FILTER_KERNEL_NAME}_1.m_axi_gmem1:bank1
-  --sp ${FILTER_KERNEL_NAME}_1.m_axi_gmem2:bank1)
+  --sp ${FILTER_KERNEL_NAME}_1.m_axi_gmem1:bank1)
 
-add_custom_target(compile_kernel
-  COMMAND XILINX_PATH=${CMAKE_BINARY_DIR} ${SDAccel_XOCC} -c
+add_custom_target(compile_hardware_emulation
+  COMMAND XILINX_PATH=${CMAKE_BINARY_DIR} ${SDAccel_XOCC} -c -t hw_emu
   ${FILTER_XOCC_COMMAND} ${FILTER_XOCC_LINK_FLAGS}
-  ${FILTER_KERNEL_SRC} -o FilterKernel.xo) 
-add_custom_target(build_kernel
-  COMMAND XILINX_PATH=${CMAKE_BINARY_DIR} ${SDAccel_XOCC} -l
+  ${FILTER_KERNEL_SRC} -o FilterKernel_hw_emu.xo) 
+add_custom_target(build_hardware_emulation
+  COMMAND XILINX_PATH=${CMAKE_BINARY_DIR} ${SDAccel_XOCC} -l -t hw_emu
   ${FILTER_XOCC_COMMAND} ${FILTER_XOCC_LINK_FLAGS}
-  FilterKernel.xo -o Filter.xclbin) 
+  FilterKernel_hw_emu.xo -o Filter_hw_emu.xclbin) 
+add_custom_target(compile_hardware
+  COMMAND XILINX_PATH=${CMAKE_BINARY_DIR} ${SDAccel_XOCC} -c -t hw
+  ${FILTER_XOCC_COMMAND} ${FILTER_XOCC_LINK_FLAGS}
+  ${FILTER_KERNEL_SRC} -o FilterKernel_hw.xo) 
+add_custom_target(build_hardware
+  COMMAND XILINX_PATH=${CMAKE_BINARY_DIR} ${SDAccel_XOCC} -l -t hw
+  ${FILTER_XOCC_COMMAND} ${FILTER_XOCC_LINK_FLAGS}
+  FilterKernel_hw.xo -o Filter_hw.xclbin) 
 
 # Host code to launch kernel
 # add_executable(RunHardware.exe host/RunHardware.cpp)
