@@ -117,5 +117,5 @@ add_custom_target(build_hardware
   FilterKernel_hw.xo -o Filter_hw.xclbin) 
 
 # Host code to launch kernel
-# add_executable(RunHardware.exe host/RunHardware.cpp)
-# target_link_libraries(RunHardware.exe ${SDAccel_LIBRARIES} ${BLAS_LIBRARIES} filterkernel)
+add_executable(RunHardware.exe host/RunHardware.cpp)
+target_link_libraries(RunHardware.exe ${SDAccel_LIBRARIES} filterkernel)
