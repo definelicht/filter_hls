@@ -12,7 +12,8 @@
 int main() {
 
   std::vector<MemoryPack_t> data;
-  std::vector<MemoryPack_t> output(8, MemoryPack_t(static_cast<Data_t>(0)));
+  std::vector<MemoryPack_t> output(kN / kMemoryWidth,
+                                   MemoryPack_t(static_cast<Data_t>(0)));
 
   const Data_t data_raw[] = {0, 1, 2, 0, 0, 0, 3, 4,
                              5, 0, 0, 6, 7, 8, 0, 0,
@@ -22,8 +23,8 @@ int main() {
                              25, 26, 0, 0, 0, 0, 0, 27,
                              28, 29, 30, 31, 32, 33, 34, 35,
                              0, 0, 36, 37, 38, 39, 40, 0};
-  for (int i = 0; i < 8; ++i) {
-    data.emplace_back(data_raw + i * 8);
+  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+    data.emplace_back(data_raw + i * kMemoryWidth);
   }
 
   std::cout << "Running hardware emulation..." << std::flush;
@@ -31,7 +32,7 @@ int main() {
   std::cout << " Done.\n";
 
   std::cout << "Verifying results..." << std::endl;
-  for (int i = 0; i < 64; ++i) {
+  for (int i = 0; i < kN; ++i) {
     std::cout << output[i / kMemoryWidth][i % kMemoryWidth] << " "; 
   }
   std::cout << "\n";

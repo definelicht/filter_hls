@@ -46,6 +46,8 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
 
     // Initialize shift counters
     Stage_t empty_slots_left = 0;
+    const Count_t elements_in_output_local = elements_in_output;
+    Count_t additional_elements = 0;
     for (int w = 0; w < kMemoryWidth; ++w) {
       #pragma HLS UNROLL
       if (stages[0][w] < ratio) {
@@ -54,9 +56,13 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
         num_shifts[0][w] = 0;
       } else {
         non_zero[0][w] = true;
-        num_shifts[0][w] = kMemoryWidth - elements_in_output + empty_slots_left;
+        num_shifts[0][w] =
+            kMemoryWidth - elements_in_output_local + empty_slots_left;
+        ++additional_elements;
       }
     }
+    elements_in_output =
+        (elements_in_output_local + additional_elements) % kMemoryWidth;
 
     // Merge stages 
     for (int s = 1; s < num_stages; ++s) {
@@ -89,7 +95,7 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
     Count_t num_next = 0;
     for (int w = 0; w < kMemoryWidth; ++w) {
       #pragma HLS UNROLL
-      const bool is_taken = w < elements_in_output;
+      const bool is_taken = w < elements_in_output_local;
       const bool is_non_zero = non_zero[num_stages - 1][w];
       if (!is_taken) {
         if (is_non_zero) {
@@ -105,42 +111,38 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
       }
     }
 
-    // We've filled up a vector: write it out and reset
-    std::cout << elements_in_output << "\n";
-    std::cout << num_curr << "\n";
-    std::cout << num_next << "\n";
-    std::cout << output << "\n";
+    // Vector is full: write it out and reset
     if (num_curr == kMemoryWidth) {
       pipe_out.Push(output);
       output = next;
-      next = MemoryPack_t(static_cast<Data_t>(0));
-      elements_in_output = num_next;
-    } else {
-      elements_in_output = num_curr;
+      next = MemoryPack_t(Data_t(0));
     }
 
   } // End loop
 
-  pipe_out.Push(MemoryPack_t(static_cast<Data_t>(0)));
+  pipe_out.Push(MemoryPack_t(Data_t(0)));
 }
 
 void Write(Stream<MemoryPack_t> &pipe, MemoryPack_t out[]) {
+  bool done = false;
   for (int i = 0; i < kN / kMemoryWidth; ++i) {
     #pragma HLS PIPELINE II=1
+    if (done) {
+      break;
+    }
     auto rd = pipe.Pop();
     bool all_zero = rd[0] == 0;
     for (int j = 1; j < kMemoryWidth; ++j) {
       #pragma HLS UNROLL
       all_zero &= rd[j] == 0;
     }
-    if (all_zero) {
-      break;
-    }
+    done = all_zero;
     out[i] = rd;
   }
 }
 
-void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[], Data_t ratio) {
+extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
+                             Data_t ratio) {
 
   #pragma HLS INTERFACE m_axi port=in offset=slave bundle=gmem0
   #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1
@@ -150,7 +152,6 @@ void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[], Data_t ratio) {
   #pragma HLS INTERFACE s_axilite port=return bundle=control
   
   #pragma HLS DATAFLOW
-
   Stream<MemoryPack_t> pipe_in("pipe_in");
   Stream<MemoryPack_t> pipe_out("pipe_out", 64);
 

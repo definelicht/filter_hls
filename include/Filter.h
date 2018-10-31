@@ -14,4 +14,5 @@ static_assert(kMemoryWidthBytes % sizeof(Data_t) == 0,
 
 using MemoryPack_t = hlslib::DataPack<Data_t, kMemoryWidth>;
 
-void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[], Data_t ratio);
+extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
+                             Data_t ratio);
