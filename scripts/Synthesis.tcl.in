@@ -1,0 +1,15 @@
+open_project ${FILTER_HLS_PROJECT_NAME} 
+open_solution ${FILTER_PART_NAME}  
+set_part ${FILTER_PART_NAME} 
+add_files -cflags "${FILTER_SYNTHESIS_FLAGS} -I${CMAKE_SOURCE_DIR}/include -I${CMAKE_SOURCE_DIR}/hlslib/include -I${CMAKE_BINARY_DIR}" "${FILTER_SRC_SYNTHESIS}" 
+set_top ${FILTER_ENTRY_FUNCTION} 
+create_clock -period ${FILTER_TARGET_CLOCK}MHz -name default
+set_clock_uncertainty ${FILTER_TARGET_CLOCK_UNCERTAINTY} 
+# SDAccel default options
+config_rtl -register_reset
+config_interface -m_axi_addr64
+config_schedule -relax_ii_for_timing
+config_compile -pipeline_loops 64
+config_compile -name_max_length 256
+csynth_design
+exit

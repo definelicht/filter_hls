@@ -1,0 +1,164 @@
+/// @author    Johannes de Fine Licht (definelicht@inf.ethz.ch)
+/// @date      June 2018 
+/// @copyright This software is copyrighted under the BSD 3-Clause License. 
+
+#include "hlslib/Stream.h"
+#include "hlslib/Simulation.h"
+#include "hlslib/TreeReduce.h"
+#include "hlslib/Utility.h"
+#include "Filter.h"
+#include <cassert>
+#include <ap_int.h>
+
+using hlslib::Stream;
+
+void Read(MemoryPack_t const in[], Stream<MemoryPack_t> &pipe) {
+  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+    #pragma HLS PIPELINE II=1
+    pipe.Push(in[i]);
+  }
+}
+
+void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
+            Stream<MemoryPack_t> &pipe_out) {
+
+  constexpr int num_stages = 2 * kMemoryWidth - 1; 
+  using Stage_t = ap_uint<hlslib::ConstLog2(num_stages)>;
+  using Count_t = ap_uint<hlslib::ConstLog2(kMemoryWidth)>;
+
+  MemoryPack_t stages[num_stages];
+  #pragma HLS ARRAY_PARTITION variable=stages complete 
+
+  Stage_t num_shifts[num_stages][kMemoryWidth];
+  #pragma HLS ARRAY_PARTITION variable=num_shifts complete 
+
+  bool non_zero[num_stages][kMemoryWidth];
+  #pragma HLS ARRAY_PARTITION variable=non_zero complete 
+
+  MemoryPack_t output, next;
+
+  Count_t elements_in_output = 0;
+
+  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+    #pragma HLS PIPELINE II=1
+
+    stages[0] = pipe_in.Pop();
+
+    // Initialize shift counters
+    Stage_t empty_slots_left = 0;
+    for (int w = 0; w < kMemoryWidth; ++w) {
+      #pragma HLS UNROLL
+      if (stages[0][w] < ratio) {
+        ++empty_slots_left;
+        non_zero[0][w] = false;
+        num_shifts[0][w] = 0;
+      } else {
+        non_zero[0][w] = true;
+        num_shifts[0][w] = kMemoryWidth - elements_in_output + empty_slots_left;
+      }
+    }
+
+    // Merge stages 
+    for (int s = 1; s < num_stages; ++s) {
+      #pragma HLS UNROLL
+      for (int w = 0; w < kMemoryWidth; ++w) {
+        #pragma HLS UNROLL
+        // If we're already in the correct place, just propagate forward
+        if (num_shifts[s - 1][w] == 0 && non_zero[s - 1][w]) {
+          stages[s][w] = stages[s - 1][w];
+          num_shifts[s][w] = 0;
+          non_zero[s][w] = true;
+        } else {
+          // Otherwise shift if the value is non-zero
+          const Stage_t shifts = num_shifts[s - 1][(w + 1) % kMemoryWidth]; 
+          if (shifts > 0) {
+            stages[s][w] = stages[s - 1][(w + 1) % kMemoryWidth];
+            num_shifts[s][w] = shifts - 1;
+            non_zero[s][w] = true;
+          } else {
+            stages[s][w] = 0;
+            num_shifts[s][w] = 0;
+            non_zero[s][w] = false;
+          }
+        }
+      }
+    }
+
+    // Fill up vector 
+    Count_t num_curr = 0;
+    Count_t num_next = 0;
+    for (int w = 0; w < kMemoryWidth; ++w) {
+      #pragma HLS UNROLL
+      const bool is_taken = w < elements_in_output;
+      const bool is_non_zero = non_zero[num_stages - 1][w];
+      if (!is_taken) {
+        if (is_non_zero) {
+          ++num_curr;
+          output[w] = stages[num_stages - 1][w];  
+        }
+      } else {
+        ++num_curr;
+        if (is_non_zero) {
+          next[w] = stages[num_stages - 1][w];  
+          ++num_next;
+        }
+      }
+    }
+
+    // We've filled up a vector: write it out and reset
+    std::cout << elements_in_output << "\n";
+    std::cout << num_curr << "\n";
+    std::cout << num_next << "\n";
+    std::cout << output << "\n";
+    if (num_curr == kMemoryWidth) {
+      pipe_out.Push(output);
+      output = next;
+      next = MemoryPack_t(static_cast<Data_t>(0));
+      elements_in_output = num_next;
+    } else {
+      elements_in_output = num_curr;
+    }
+
+  } // End loop
+
+  pipe_out.Push(MemoryPack_t(static_cast<Data_t>(0)));
+}
+
+void Write(Stream<MemoryPack_t> &pipe, MemoryPack_t out[]) {
+  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+    #pragma HLS PIPELINE II=1
+    auto rd = pipe.Pop();
+    bool all_zero = rd[0] == 0;
+    for (int j = 1; j < kMemoryWidth; ++j) {
+      #pragma HLS UNROLL
+      all_zero &= rd[j] == 0;
+    }
+    if (all_zero) {
+      break;
+    }
+    out[i] = rd;
+  }
+}
+
+void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[], Data_t ratio) {
+
+  #pragma HLS INTERFACE m_axi port=in offset=slave bundle=gmem0
+  #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1
+  #pragma HLS INTERFACE s_axilite port=in bundle=control
+  #pragma HLS INTERFACE s_axilite port=ratio bundle=control
+  #pragma HLS INTERFACE s_axilite port=out bundle=control
+  #pragma HLS INTERFACE s_axilite port=return bundle=control
+  
+  #pragma HLS DATAFLOW
+
+  Stream<MemoryPack_t> pipe_in("pipe_in");
+  Stream<MemoryPack_t> pipe_out("pipe_out", 64);
+
+  HLSLIB_DATAFLOW_INIT();
+
+  HLSLIB_DATAFLOW_FUNCTION(Read, in, pipe_in);
+  HLSLIB_DATAFLOW_FUNCTION(Filter, ratio, pipe_in, pipe_out);
+  HLSLIB_DATAFLOW_FUNCTION(Write, pipe_out, out);
+
+  HLSLIB_DATAFLOW_FINALIZE();
+}
