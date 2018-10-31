@@ -41,8 +41,6 @@ int main(int, char **argv) {
   for (int i = 0; i < kN / kMemoryWidth; ++i) {
     const auto pack = output[i];
     for (int j = 0; j < kMemoryWidth; ++j) {
-      // std::cout << pack[j] << " / " << reference_output[i * kMemoryWidth + j]
-      //           << "\n";
       if (pack[j] != reference_output[i * kMemoryWidth + j]) {
         std::cerr << "Verification failed.\n" << std::flush;
         return 1;

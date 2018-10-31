@@ -120,6 +120,9 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
 
   } // End loop
 
+  if (elements_in_output > 0) {
+    pipe_out.Push(output);
+  }
   pipe_out.Push(MemoryPack_t(Data_t(0)));
 }
 
@@ -137,6 +140,7 @@ void Write(Stream<MemoryPack_t> &pipe, MemoryPack_t out[]) {
       all_zero &= rd[j] == 0;
     }
     done = all_zero;
+    std::cout << rd << "\n";
     out[i] = rd;
   }
 }
