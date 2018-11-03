@@ -12,14 +12,15 @@
 
 using hlslib::Stream;
 
-void Read(MemoryPack_t const in[], Stream<MemoryPack_t> &pipe) {
-  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+void Read(MemoryPack_t const in[], Stream<MemoryPack_t> &pipe,
+          const unsigned N) {
+  for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
     #pragma HLS PIPELINE II=1
     pipe.Push(in[i]);
   }
 }
 
-void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
+void Filter(const unsigned N, const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
             Stream<MemoryPack_t> &pipe_out) {
 
   constexpr int num_stages = 2 * kMemoryWidth - 1; 
@@ -39,7 +40,7 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
 
   Count_t elements_in_output = 0;
 
-  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+  for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
     #pragma HLS PIPELINE II=1
 
     stages[0] = pipe_in.Pop();
@@ -48,7 +49,7 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
     Stage_t empty_slots_left = 0;
     const Count_t elements_in_output_local = elements_in_output;
     Count_t additional_elements = 0;
-    for (int w = 0; w < kMemoryWidth; ++w) {
+    for (unsigned w = 0; w < kMemoryWidth; ++w) {
       #pragma HLS UNROLL
       if (stages[0][w] < ratio) {
         ++empty_slots_left;
@@ -67,7 +68,7 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
     // Merge stages 
     for (int s = 1; s < num_stages; ++s) {
       #pragma HLS UNROLL
-      for (int w = 0; w < kMemoryWidth; ++w) {
+      for (unsigned w = 0; w < kMemoryWidth; ++w) {
         #pragma HLS UNROLL
         // If we're already in the correct place, just propagate forward
         if (num_shifts[s - 1][w] == 0 && non_zero[s - 1][w]) {
@@ -93,7 +94,7 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
     // Fill up vector 
     Count_t num_curr = 0;
     Count_t num_next = 0;
-    for (int w = 0; w < kMemoryWidth; ++w) {
+    for (unsigned w = 0; w < kMemoryWidth; ++w) {
       #pragma HLS UNROLL
       const bool is_taken = w < elements_in_output_local;
       const bool is_non_zero = non_zero[num_stages - 1][w];
@@ -126,16 +127,16 @@ void Filter(const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
   pipe_out.Push(MemoryPack_t(Data_t(0)));
 }
 
-void Write(Stream<MemoryPack_t> &pipe, MemoryPack_t out[]) {
+void Write(Stream<MemoryPack_t> &pipe, MemoryPack_t out[], const unsigned N) {
   bool done = false;
-  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+  for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
     #pragma HLS PIPELINE II=1
     if (done) {
       break;
     }
     auto rd = pipe.Pop();
     bool all_zero = rd[0] == 0;
-    for (int j = 1; j < kMemoryWidth; ++j) {
+    for (unsigned j = 1; j < kMemoryWidth; ++j) {
       #pragma HLS UNROLL
       all_zero &= rd[j] == 0;
     }
@@ -145,13 +146,14 @@ void Write(Stream<MemoryPack_t> &pipe, MemoryPack_t out[]) {
 }
 
 extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
-                             Data_t ratio) {
+                             unsigned N, Data_t ratio) {
 
   #pragma HLS INTERFACE m_axi port=in offset=slave bundle=gmem0
   #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1
   #pragma HLS INTERFACE s_axilite port=in bundle=control
-  #pragma HLS INTERFACE s_axilite port=ratio bundle=control
   #pragma HLS INTERFACE s_axilite port=out bundle=control
+  #pragma HLS INTERFACE s_axilite port=N bundle=control
+  #pragma HLS INTERFACE s_axilite port=ratio bundle=control
   #pragma HLS INTERFACE s_axilite port=return bundle=control
   
   #pragma HLS DATAFLOW
@@ -160,9 +162,9 @@ extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
 
   HLSLIB_DATAFLOW_INIT();
 
-  HLSLIB_DATAFLOW_FUNCTION(Read, in, pipe_in);
-  HLSLIB_DATAFLOW_FUNCTION(Filter, ratio, pipe_in, pipe_out);
-  HLSLIB_DATAFLOW_FUNCTION(Write, pipe_out, out);
+  HLSLIB_DATAFLOW_FUNCTION(Read, in, pipe_in, N);
+  HLSLIB_DATAFLOW_FUNCTION(Filter, N, ratio, pipe_in, pipe_out);
+  HLSLIB_DATAFLOW_FUNCTION(Write, pipe_out, out, N);
 
   HLSLIB_DATAFLOW_FINALIZE();
 }

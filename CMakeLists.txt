@@ -18,7 +18,6 @@ set(FILTER_ENABLE_DEBUGGING OFF CACHE STRING "Inject debugging cores to design")
 # Domain options
 set(FILTER_DATA_TYPE "float" CACHE STRING "Data type.")
 set(FILTER_MEMORY_BUS_WIDTH 64 CACHE STRING "Width of memory bus in bytes.")
-set(FILTER_NUM_ELEMENTS 512 CACHE STRING "Number of elements.")
 
 # Internal
 set(FILTER_KERNEL_NAME FilterKernel)

@@ -10,47 +10,81 @@
 
 int main(int argc, char **argv) {
 
-  float ratio;
-  if (argc > 1) { 
-    ratio = std::stof(argv[1]); 
-  } else {
-    ratio = 0.5;
+  if (argc < 3) {
+    std::cout << "Required arguments: N ratio\n" << std::flush;
+    return 1;
   }
+
+  const unsigned N = std::stoi(argv[1]);
+  const float ratio = std::stof(argv[2]); 
 
   std::default_random_engine rng(5);
   std::uniform_real_distribution<Data_t> dist(0, 1);
 
   std::cout << "Initializing memory...\n" << std::flush;
-  std::vector<Data_t> reference_input(kN);
-  std::vector<MemoryPack_t> input(kN / kMemoryWidth);
+  std::vector<Data_t> reference_input(N);
+  std::vector<MemoryPack_t> input(N / kMemoryWidth);
 
-  for (int i = 0; i < kN / kMemoryWidth; ++i) {
-    for (int j = 0; j < kMemoryWidth; ++j) {
+  for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
+    for (unsigned j = 0; j < kMemoryWidth; ++j) {
       reference_input[i * kMemoryWidth + j] = dist(rng);
     }
     input[i].Pack(&reference_input[i * kMemoryWidth]);
   }
 
-  std::vector<Data_t> reference_output(kN, 0);
-  std::vector<MemoryPack_t> output(kN / kMemoryWidth,
+  std::vector<Data_t> reference_output(N, 0);
+  std::vector<MemoryPack_t> output(N / kMemoryWidth,
                                    MemoryPack_t(static_cast<Data_t>(0)));
 
   std::cout << "Running simulation...\n" << std::flush;
-  FilterKernel(input.data(), output.data(), ratio);
+  FilterKernel(input.data(), output.data(), N, ratio);
 
   std::cout << "Running reference implementation...\n" << std::flush;
   ReferenceImplementation(reference_input.data(), reference_output.data(),
-                          ratio);
+                          N, ratio);
 
   std::cout << "Verifying results..." << std::endl;
-  for (int i = 0; i < kN / kMemoryWidth; ++i) {
+  bool failed = false;
+  for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
     const auto pack = output[i];
-    for (int j = 0; j < kMemoryWidth; ++j) {
+    for (unsigned j = 0; j < kMemoryWidth; ++j) {
       if (pack[j] != reference_output[i * kMemoryWidth + j]) {
         std::cerr << "Verification failed.\n" << std::flush;
-        return 1;
+        failed = true;
+        break;
       }
     }
+    if (failed) {
+      break;
+    }
+  }
+  constexpr int NumPrint = 16;
+  if (failed) {
+    std::cout << "\n** Printing first " << NumPrint << " elements:\nKernel:\n";
+    for (unsigned i = 0; i < NumPrint / kMemoryWidth; ++i) {
+      const auto pack = output[i];
+      for (unsigned j = 0; j < kMemoryWidth; ++j) {
+        std::cout << pack[j] << " ";
+      }
+    }
+    std::cout << "\nReference:\n";
+    for (unsigned i = 0; i < NumPrint; ++i) {
+      std::cout << reference_output[i] << " ";
+    }
+    std::cout << "\n\n** Printing last " << NumPrint
+              << " elements:\nKernel:\n";
+    for (unsigned i = (N - NumPrint) / kMemoryWidth; i < N / kMemoryWidth; ++i) {
+      const auto pack = output[i];
+      for (unsigned j = 0; j < kMemoryWidth; ++j) {
+        std::cout << pack[j] << " ";
+      }
+    }
+    std::cout << "\nReference:\n";
+    for (unsigned i = N - NumPrint; i < N; ++i) {
+      std::cout << reference_output[i] << " ";
+    }
+    std::cout << "\n\n";
+    return 1;
   }
 
   std::cout << "Successfully verified.\n";

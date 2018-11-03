@@ -7,5 +7,4 @@
 #include <cstddef>
 
 using Data_t = ${FILTER_DATA_TYPE}; 
-constexpr int kMemoryWidthBytes = ${FILTER_MEMORY_BUS_WIDTH};
-constexpr int kN = ${FILTER_NUM_ELEMENTS};
+constexpr unsigned kMemoryWidthBytes = ${FILTER_MEMORY_BUS_WIDTH};
