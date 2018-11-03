@@ -8,9 +8,14 @@
 #include <vector>
 #include <string>
 
-int main(int, char **argv) {
+int main(int argc, char **argv) {
 
-  const float ratio = std::stof(argv[1]); 
+  float ratio;
+  if (argc > 1) { 
+    ratio = std::stof(argv[1]); 
+  } else {
+    ratio = 0.5;
+  }
 
   std::default_random_engine rng(5);
   std::uniform_real_distribution<Data_t> dist(0, 1);
@@ -47,6 +52,7 @@ int main(int, char **argv) {
       }
     }
   }
+
   std::cout << "Successfully verified.\n";
 
   return 0;

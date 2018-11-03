@@ -140,7 +140,6 @@ void Write(Stream<MemoryPack_t> &pipe, MemoryPack_t out[]) {
       all_zero &= rd[j] == 0;
     }
     done = all_zero;
-    std::cout << rd << "\n";
     out[i] = rd;
   }
 }

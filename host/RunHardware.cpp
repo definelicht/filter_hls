@@ -8,9 +8,14 @@
 #include <random>
 #include <vector>
 
-int main(int, char **argv) {
+int main(int argc, char **argv) {
 
-  const Data_t ratio = std::stof(argv[1]); 
+  float ratio;
+  if (argc > 1) { 
+    ratio = std::stof(argv[1]); 
+  } else {
+    ratio = 0.5;
+  }
 
   std::default_random_engine rng(5);
   std::uniform_real_distribution<Data_t> dist(0, 1);
@@ -36,10 +41,10 @@ int main(int, char **argv) {
   std::cout << "Creating host memory...\n" << std::flush;
   auto input_device =
       context.MakeBuffer<MemoryPack_t, hlslib::ocl::Access::read>(
-          input.cbegin(), input.cend());
+          hlslib::ocl::MemoryBank::bank0, input.cbegin(), input.cend());
   auto output_device =
       context.MakeBuffer<MemoryPack_t, hlslib::ocl::Access::write>(
-          output.cbegin(), output.cend());
+          hlslib::ocl::MemoryBank::bank1, output.cbegin(), output.cend());
 
   std::cout << "Creating program...\n" << std::flush;
   auto program = context.MakeProgram("Filter_hw_emu.xclbin");
@@ -57,15 +62,49 @@ int main(int, char **argv) {
                           ratio);
 
   std::cout << "Verifying results..." << std::endl;
+  bool failed = false;
   for (int i = 0; i < kN / kMemoryWidth; ++i) {
     const auto pack = output[i];
     for (int j = 0; j < kMemoryWidth; ++j) {
       if (pack[j] != reference_output[i * kMemoryWidth + j]) {
         std::cerr << "Verification failed.\n" << std::flush;
-        return 1;
+        failed = true;
+        break;
       }
     }
+    if (failed) {
+      break;
+    }
   }
+  constexpr int kNumPrint = 32;
+  if (failed) {
+    std::cout << "** Printing first " << kNumPrint << " elements:\nKernel:\n";
+    for (int i = 0; i < kNumPrint / kMemoryWidth; ++i) {
+      const auto pack = output[i];
+      for (int j = 0; j < kMemoryWidth; ++j) {
+        std::cout << pack[j] << " ";
+      }
+    }
+    std::cout << "\nReference:\n";
+    for (int i = 0; i < kNumPrint; ++i) {
+      std::cout << reference_output[i] << " ";
+    }
+    std::cout << "\n\n** Printing last " << kNumPrint
+              << " elements:\nKernel:\n";
+    for (int i = (kN - kNumPrint) / kMemoryWidth; i < kN / kMemoryWidth; ++i) {
+      const auto pack = output[i];
+      for (int j = 0; j < kMemoryWidth; ++j) {
+        std::cout << pack[j] << " ";
+      }
+    }
+    std::cout << "\nReference:\n";
+    for (int i = kN - kNumPrint; i < kN; ++i) {
+      std::cout << reference_output[i] << " ";
+    }
+    std::cout << "\n\n";
+    return 1;
+  }
+
   std::cout << "Successfully verified.\n";
 
   return 0;
