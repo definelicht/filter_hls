@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
           hlslib::ocl::MemoryBank::bank1, output.cbegin(), output.cend());
 
   std::cout << "Creating program...\n" << std::flush;
-  auto program = context.MakeProgram("Filter_hw_emu.xclbin");
+  auto program = context.MakeProgram("Filter_hw.xclbin");
 
   std::cout << "Creating kernel...\n" << std::flush;
   auto kernel =
@@ -56,7 +56,9 @@ int main(int argc, char **argv) {
 
   std::cout << "Executing kernel...\n" << std::flush;
   const auto elapsed = kernel.ExecuteTask();
-  std::cout << "Finished in " << elapsed.second << " seconds.\n";
+  std::cout << "Finished in " << elapsed.second
+            << " seconds, corresponding to a bandwidth of "
+            << 1e-6 * (1.0 + ratio) * N * sizeof(Data_t) << " MB/s\n";
 
   std::cout << "Running reference implementation...\n" << std::flush;
   ReferenceImplementation(reference_input.data(), reference_output.data(),

@@ -87,6 +87,7 @@ if(FILTER_ENABLE_PROFILING)
 endif()
 if(FILTER_ENABLE_DEBUGGING)
   set(FILTER_XOCC_COMMAND ${FILTER_XOCC_COMMAND}
+    -g
     --dk chipscope:FilterKernel_1:M_AXI_GMEM0
     --dk chipscope:FilterKernel_1:M_AXI_GMEM1)
 endif()

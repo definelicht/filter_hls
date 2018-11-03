@@ -157,8 +157,8 @@ extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
   #pragma HLS INTERFACE s_axilite port=return bundle=control
   
   #pragma HLS DATAFLOW
-  Stream<MemoryPack_t> pipe_in("pipe_in");
-  Stream<MemoryPack_t> pipe_out("pipe_out", 64);
+  Stream<MemoryPack_t> pipe_in("pipe_in", 2048);
+  Stream<MemoryPack_t> pipe_out("pipe_out", 2048);
 
   HLSLIB_DATAFLOW_INIT();
 
