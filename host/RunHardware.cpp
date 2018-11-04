@@ -10,13 +10,25 @@
 
 int main(int argc, char **argv) {
 
-  if (argc < 3) {
-    std::cout << "Required arguments: N ratio\n" << std::flush;
+  if (argc < 4) {
+    std::cout << "Required arguments: <N> <ratio> <mode [hw_emu, hw]>\n"
+              << std::flush;
     return 1;
   }
 
   const unsigned N = std::stoi(argv[1]);
   const float ratio = std::stof(argv[2]); 
+  const std::string mode(argv[3]);
+
+  bool emulation;
+  if (mode == "hw") {
+    emulation = false;
+  } else if (mode == "hw_emu") {
+    emulation = true;
+  } else {
+    std::cerr << "Invalid mode: " << mode << "\n" << std::flush;
+    return 2;
+  }
 
   std::default_random_engine rng(5);
   std::uniform_real_distribution<Data_t> dist(0, 1);
@@ -48,7 +60,8 @@ int main(int argc, char **argv) {
           hlslib::ocl::MemoryBank::bank1, output.cbegin(), output.cend());
 
   std::cout << "Creating program...\n" << std::flush;
-  auto program = context.MakeProgram("Filter_hw.xclbin");
+  auto program = context.MakeProgram(emulation ? "Filter_hw_emu.xclbin"
+                                               : "Filter_hw.xclbin");
 
   std::cout << "Creating kernel...\n" << std::flush;
   auto kernel =
@@ -64,6 +77,9 @@ int main(int argc, char **argv) {
   std::cout << "Running reference implementation...\n" << std::flush;
   ReferenceImplementation(reference_input.data(), reference_output.data(),
                           N, ratio);
+
+  std::cout << "Copying back result..." << std::endl;
+  output_device.CopyToHost(output.begin());
 
   std::cout << "Verifying results..." << std::endl;
   bool failed = false;
@@ -106,7 +122,7 @@ int main(int argc, char **argv) {
       std::cout << reference_output[i] << " ";
     }
     std::cout << "\n\n";
-    return 1;
+    return 3;
   }
 
   std::cout << "Successfully verified.\n";
