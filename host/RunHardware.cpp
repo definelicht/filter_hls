@@ -47,6 +47,8 @@ int main(int argc, char **argv) {
   std::vector<Data_t> reference_output(N, 0);
   std::vector<MemoryPack_t> output(N / kMemoryWidth,
                                    MemoryPack_t(static_cast<Data_t>(0)));
+  unsigned N_out = 0;
+  unsigned N_out_reference = 0;
 
   std::cout << "Creating context...\n" << std::flush;
   hlslib::ocl::Context context;
@@ -58,14 +60,17 @@ int main(int argc, char **argv) {
   auto output_device =
       context.MakeBuffer<MemoryPack_t, hlslib::ocl::Access::write>(
           hlslib::ocl::MemoryBank::bank1, output.cbegin(), output.cend());
+  auto N_out_device =
+      context.MakeBuffer<unsigned, hlslib::ocl::Access::write>(
+          hlslib::ocl::MemoryBank::bank0, &N_out, &N_out + 1);
 
   std::cout << "Creating program...\n" << std::flush;
   auto program = context.MakeProgram(emulation ? "Filter_hw_emu.xclbin"
                                                : "Filter_hw.xclbin");
 
   std::cout << "Creating kernel...\n" << std::flush;
-  auto kernel =
-      program.MakeKernel("FilterKernel", input_device, output_device, N, ratio);
+  auto kernel = program.MakeKernel("FilterKernel", input_device, output_device,
+                                   N, ratio, N_out_device);
 
   std::cout << "Executing kernel...\n" << std::flush;
   const auto elapsed = kernel.ExecuteTask();
@@ -76,24 +81,33 @@ int main(int argc, char **argv) {
 
   std::cout << "Running reference implementation...\n" << std::flush;
   ReferenceImplementation(reference_input.data(), reference_output.data(),
-                          N, ratio);
+                          N, ratio, N_out_reference);
 
   std::cout << "Copying back result..." << std::endl;
   output_device.CopyToHost(output.begin());
+  N_out_device.CopyToHost(&N_out);
 
-  std::cout << "Verifying results..." << std::endl;
   bool failed = false;
-  for (int i = 0; i < N / kMemoryWidth; ++i) {
-    const auto pack = output[i];
-    for (int j = 0; j < kMemoryWidth; ++j) {
-      if (pack[j] != reference_output[i * kMemoryWidth + j]) {
-        std::cerr << "Verification failed.\n" << std::flush;
-        failed = true;
+  if (N_out != N_out_reference) {
+    std::cerr << "Mismatch in number of filtered elements: " << N_out << " vs. "
+              << N_out_reference << "\n";
+    failed = true;
+  }
+
+  if (!failed) {
+    std::cout << "Verifying results..." << std::endl;
+    for (int i = 0; i < N / kMemoryWidth; ++i) {
+      const auto pack = output[i];
+      for (int j = 0; j < kMemoryWidth; ++j) {
+        if (pack[j] != reference_output[i * kMemoryWidth + j]) {
+          std::cerr << "Verification failed.\n" << std::flush;
+          failed = true;
+          break;
+        }
+      }
+      if (failed) {
         break;
       }
-    }
-    if (failed) {
-      break;
     }
   }
   constexpr unsigned NumPrint = 32;

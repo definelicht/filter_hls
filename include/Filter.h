@@ -15,12 +15,13 @@ static_assert(kMemoryWidthBytes % sizeof(Data_t) == 0,
 using MemoryPack_t = hlslib::DataPack<Data_t, kMemoryWidth>;
 
 extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
-                             unsigned N, Data_t ratio);
+                             unsigned N, Data_t ratio, unsigned *N_out);
 
 #ifndef HLSLIB_SYNTHESIS
 
 inline void ReferenceImplementation(Data_t const in[], Data_t out[],
-                                    const unsigned N, Data_t const ratio) {
+                                    const unsigned N, Data_t const ratio,
+                                    unsigned &N_out) {
   int i_out = 0;
   for (unsigned i_in = 0; i_in < N; ++i_in) {
     const auto read = in[i_in];
@@ -28,6 +29,7 @@ inline void ReferenceImplementation(Data_t const in[], Data_t out[],
       out[i_out++] = read;
     }
   }
+  N_out = i_out;
 }
 
 #endif
