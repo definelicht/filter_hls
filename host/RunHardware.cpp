@@ -58,7 +58,8 @@ int main(int argc, char **argv) {
   const auto elapsed = kernel.ExecuteTask();
   std::cout << "Finished in " << elapsed.second
             << " seconds, corresponding to a bandwidth of "
-            << 1e-6 * (1.0 + ratio) * N * sizeof(Data_t) << " MB/s\n";
+            << 1e-6 * (1.0 + ratio) * N * sizeof(Data_t) / elapsed.second
+            << " MB/s\n";
 
   std::cout << "Running reference implementation...\n" << std::flush;
   ReferenceImplementation(reference_input.data(), reference_output.data(),
