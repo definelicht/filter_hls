@@ -35,30 +35,40 @@ int main(int argc, char **argv) {
   std::vector<Data_t> reference_output(N, 0);
   std::vector<MemoryPack_t> output(N / kMemoryWidth,
                                    MemoryPack_t(static_cast<Data_t>(0)));
+  unsigned N_out = 0;
+  unsigned N_out_reference = 0;
 
   std::cout << "Running simulation...\n" << std::flush;
-  FilterKernel(input.data(), output.data(), N, ratio);
+  FilterKernel(input.data(), output.data(), N, ratio, &N_out);
 
   std::cout << "Running reference implementation...\n" << std::flush;
   ReferenceImplementation(reference_input.data(), reference_output.data(),
-                          N, ratio);
+                          N, ratio, N_out_reference);
 
-  std::cout << "Verifying results..." << std::endl;
   bool failed = false;
-  for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
-    const auto pack = output[i];
-    for (unsigned j = 0; j < kMemoryWidth; ++j) {
-      if (pack[j] != reference_output[i * kMemoryWidth + j]) {
-        std::cerr << "Verification failed.\n" << std::flush;
-        failed = true;
+  if (N_out != N_out_reference) {
+    std::cerr << "Mismatch in number of filtered elements: " << N_out << " vs. "
+              << N_out_reference << "\n";
+    failed = true;
+  }
+
+  if (!failed) {
+    std::cout << "Verifying results..." << std::endl;
+    for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
+      const auto pack = output[i];
+      for (unsigned j = 0; j < kMemoryWidth; ++j) {
+        if (pack[j] != reference_output[i * kMemoryWidth + j]) {
+          std::cerr << "Verification failed.\n" << std::flush;
+          failed = true;
+          break;
+        }
+      }
+      if (failed) {
         break;
       }
     }
-    if (failed) {
-      break;
-    }
   }
-  constexpr int NumPrint = 16;
+  constexpr int NumPrint = 32;
   if (failed) {
     std::cout << "\n** Printing first " << NumPrint << " elements:\nKernel:\n";
     for (unsigned i = 0; i < NumPrint / kMemoryWidth; ++i) {

@@ -7,6 +7,7 @@
 #include "hlslib/TreeReduce.h"
 #include "hlslib/Utility.h"
 #include "Filter.h"
+#include <algorithm>
 #include <cassert>
 #include <ap_int.h>
 
@@ -21,7 +22,8 @@ void Read(MemoryPack_t const in[], Stream<MemoryPack_t> &pipe,
 }
 
 void Filter(const unsigned N, const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
-            Stream<MemoryPack_t> &pipe_out, Stream<bool> &valid_out) {
+            Stream<MemoryPack_t> &pipe_out, Stream<bool> &valid_out,
+            unsigned *N_out) {
 
   constexpr int num_stages = 2 * kMemoryWidth - 1; 
   using Stage_t = ap_uint<hlslib::ConstLog2(num_stages)>;
@@ -39,6 +41,8 @@ void Filter(const unsigned N, const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
   MemoryPack_t output, next;
 
   Count_t elements_in_output = 0;
+
+  unsigned count = 0;
 
   for (unsigned i = 0; i < N / kMemoryWidth + 1; ++i) {
     #pragma HLS PIPELINE II=1
@@ -123,10 +127,12 @@ void Filter(const unsigned N, const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
     if (is_full) {
       output = next;
       next = MemoryPack_t(Data_t(0));
+      ++count;
     }
 
   } // End loop
 
+  *N_out = std::min<unsigned>(kMemoryWidth * count + elements_in_output, N);
 }
 
 void Write(Stream<MemoryPack_t> &pipe, Stream<bool> &pipe_valid,
@@ -143,14 +149,16 @@ void Write(Stream<MemoryPack_t> &pipe, Stream<bool> &pipe_valid,
 }
 
 extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
-                             unsigned N, Data_t ratio) {
+                             unsigned N, Data_t ratio, unsigned *N_out) {
 
   #pragma HLS INTERFACE m_axi port=in offset=slave bundle=gmem0
   #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1
+  #pragma HLS INTERFACE m_axi port=N_out offset=slave bundle=gmem2
   #pragma HLS INTERFACE s_axilite port=in bundle=control
   #pragma HLS INTERFACE s_axilite port=out bundle=control
   #pragma HLS INTERFACE s_axilite port=N bundle=control
   #pragma HLS INTERFACE s_axilite port=ratio bundle=control
+  #pragma HLS INTERFACE s_axilite port=N_out bundle=control
   #pragma HLS INTERFACE s_axilite port=return bundle=control
   
   #pragma HLS DATAFLOW
@@ -161,7 +169,7 @@ extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
   HLSLIB_DATAFLOW_INIT();
 
   HLSLIB_DATAFLOW_FUNCTION(Read, in, pipe_in, N);
-  HLSLIB_DATAFLOW_FUNCTION(Filter, N, ratio, pipe_in, pipe_out, pipe_valid);
+  HLSLIB_DATAFLOW_FUNCTION(Filter, N, ratio, pipe_in, pipe_out, pipe_valid, N_out);
   HLSLIB_DATAFLOW_FUNCTION(Write, pipe_out, pipe_valid, out, N);
 
   HLSLIB_DATAFLOW_FINALIZE();
