@@ -12,6 +12,27 @@
 
 using hlslib::Stream;
 
+struct MemoryPackWithValid {
+  static constexpr unsigned kBitWidth = 8 * kMemoryWidthBytes;
+  ap_uint<kBitWidth + 1> pack;
+  MemoryPackWithValid() = default; 
+  MemoryPackWithValid(MemoryPack_t const &_data, const bool _is_valid) {
+    #pragma HLS INLINE
+    pack.range(kBitWidth - 1, 0) = _data.data();
+    pack.range(kBitWidth, kBitWidth) = _is_valid;
+  }
+  MemoryPack_t data() const {
+    #pragma HLS INLINE
+    MemoryPack_t output;
+    output.data() = pack.range(kBitWidth - 1, 0);
+    return output;
+  }
+  bool is_valid() const {
+    #pragma HLS INLINE
+    return bool(pack.range(kBitWidth, kBitWidth));
+  }
+};
+
 void Read(MemoryPack_t const in[], Stream<MemoryPack_t> &pipe,
           const unsigned N) {
   for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
@@ -21,7 +42,7 @@ void Read(MemoryPack_t const in[], Stream<MemoryPack_t> &pipe,
 }
 
 void Filter(const unsigned N, const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
-            Stream<MemoryPack_t> &pipe_out) {
+            Stream<MemoryPackWithValid> &pipe_out) {
 
   constexpr int num_stages = 2 * kMemoryWidth - 1; 
   using Stage_t = ap_uint<hlslib::ConstLog2(num_stages)>;
@@ -40,10 +61,14 @@ void Filter(const unsigned N, const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
 
   Count_t elements_in_output = 0;
 
-  for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
+  for (unsigned i = 0; i < N / kMemoryWidth + 1; ++i) {
     #pragma HLS PIPELINE II=1
 
-    stages[0] = pipe_in.Pop();
+    if (i < N / kMemoryWidth) {
+      stages[0] = pipe_in.Pop();
+    } else {
+      stages[0] = MemoryPack_t(static_cast<Data_t>(0));
+    }
 
     // Initialize shift counters
     Stage_t empty_slots_left = 0;
@@ -112,36 +137,27 @@ void Filter(const unsigned N, const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
       }
     }
 
-    // Vector is full: write it out and reset
-    if (num_curr == kMemoryWidth) {
-      pipe_out.Push(output);
+    const bool is_full = num_curr == kMemoryWidth;
+    const bool last_iter = i == N / kMemoryWidth;
+    pipe_out.Push(MemoryPackWithValid(output, is_full || last_iter));
+    if (is_full) {
       output = next;
       next = MemoryPack_t(Data_t(0));
     }
 
   } // End loop
 
-  if (elements_in_output > 0) {
-    pipe_out.Push(output);
-  }
-  pipe_out.Push(MemoryPack_t(Data_t(0)));
 }
 
-void Write(Stream<MemoryPack_t> &pipe, MemoryPack_t out[], const unsigned N) {
-  bool done = false;
-  for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
+void Write(Stream<MemoryPackWithValid> &pipe, MemoryPack_t out[],
+           const unsigned N) {
+  unsigned i_out = 0;
+  for (unsigned i = 0; i < N / kMemoryWidth + 1; ++i) {
     #pragma HLS PIPELINE II=1
-    if (done) {
-      break;
+    const auto rd = pipe.Pop();
+    if (rd.is_valid() && i_out < N / kMemoryWidth) {
+      out[i_out++] = rd.data();
     }
-    auto rd = pipe.Pop();
-    bool all_zero = rd[0] == 0;
-    for (unsigned j = 1; j < kMemoryWidth; ++j) {
-      #pragma HLS UNROLL
-      all_zero &= rd[j] == 0;
-    }
-    done = all_zero;
-    out[i] = rd;
   }
 }
 
@@ -158,7 +174,7 @@ extern "C" void FilterKernel(MemoryPack_t const in[], MemoryPack_t out[],
   
   #pragma HLS DATAFLOW
   Stream<MemoryPack_t> pipe_in("pipe_in", 2048);
-  Stream<MemoryPack_t> pipe_out("pipe_out", 2048);
+  Stream<MemoryPackWithValid> pipe_out("pipe_out", 2048);
 
   HLSLIB_DATAFLOW_INIT();
 
