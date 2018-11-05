@@ -4,6 +4,7 @@
 
 #include "hlslib/SDAccel.h"
 #include "Filter.h"
+#include "aligned_allocator.h"
 #include <iostream>
 #include <random>
 #include <vector>
@@ -35,7 +36,8 @@ int main(int argc, char **argv) {
 
   std::cout << "Initializing memory...\n" << std::flush;
   std::vector<Data_t> reference_input(N);
-  std::vector<MemoryPack_t> input(N / kMemoryWidth);
+  std::vector<MemoryPack_t, aligned_allocator<Data_t, 4096>> input(
+      N / kMemoryWidth);
 
   for (unsigned i = 0; i < N / kMemoryWidth; ++i) {
     for (unsigned j = 0; j < kMemoryWidth; ++j) {
@@ -45,9 +47,9 @@ int main(int argc, char **argv) {
   }
 
   std::vector<Data_t> reference_output(N, 0);
-  std::vector<MemoryPack_t> output(N / kMemoryWidth,
-                                   MemoryPack_t(static_cast<Data_t>(0)));
-  unsigned N_out = 0;
+  std::vector<MemoryPack_t, aligned_allocator<Data_t, 4096>> output(
+      N / kMemoryWidth, MemoryPack_t(static_cast<Data_t>(0)));
+  std::vector<unsigned, aligned_allocator<Data_t, 4096>> N_out_vec(1, 0);
   unsigned N_out_reference = 0;
 
   std::cout << "Creating context...\n" << std::flush;
@@ -60,9 +62,9 @@ int main(int argc, char **argv) {
   auto output_device =
       context.MakeBuffer<MemoryPack_t, hlslib::ocl::Access::write>(
           hlslib::ocl::MemoryBank::bank1, output.cbegin(), output.cend());
-  auto N_out_device =
-      context.MakeBuffer<unsigned, hlslib::ocl::Access::write>(
-          hlslib::ocl::MemoryBank::bank0, &N_out, &N_out + 1);
+  auto N_out_device = context.MakeBuffer<unsigned, hlslib::ocl::Access::write>(
+      hlslib::ocl::MemoryBank::bank0, N_out_vec.cbegin(),
+      N_out_vec.cbegin() + 1);
 
   std::cout << "Creating program...\n" << std::flush;
   auto program = context.MakeProgram(emulation ? "Filter_hw_emu.xclbin"
@@ -85,7 +87,8 @@ int main(int argc, char **argv) {
 
   std::cout << "Copying back result..." << std::endl;
   output_device.CopyToHost(output.begin());
-  N_out_device.CopyToHost(&N_out);
+  N_out_device.CopyToHost(N_out_vec.begin());
+  unsigned N_out = N_out_vec[0];
 
   bool failed = false;
   if (N_out != N_out_reference) {
@@ -95,19 +98,22 @@ int main(int argc, char **argv) {
   }
 
   if (!failed) {
+    unsigned wrong_results = 0;
     std::cout << "Verifying results..." << std::endl;
-    for (int i = 0; i < N / kMemoryWidth; ++i) {
-      const auto pack = output[i];
-      for (int j = 0; j < kMemoryWidth; ++j) {
-        if (pack[j] != reference_output[i * kMemoryWidth + j]) {
-          std::cerr << "Verification failed.\n" << std::flush;
-          failed = true;
-          break;
-        }
+    for (int i = 0; i < N_out; ++i) {
+      const auto kernel_res = output[i / kMemoryWidth][i % kMemoryWidth];
+      const auto reference_res = reference_output[i];
+      if (kernel_res != reference_res) {
+        std::cout << "Wrong result at " << i << ": " << kernel_res << " / "
+                  << reference_res << "\n";
+        ++wrong_results;
       }
-      if (failed) {
-        break;
-      }
+    }
+    if (wrong_results > 0) {
+      failed = true;
+      std::cerr << "Verification failed: " << wrong_results << " / " << N_out
+                << " wrong elements.\n"
+                << std::flush;
     }
   }
   constexpr unsigned NumPrint = 32;
@@ -125,14 +131,11 @@ int main(int argc, char **argv) {
     }
     std::cout << "\n\n** Printing last " << NumPrint
               << " elements:\nKernel:\n";
-    for (unsigned i = (N - NumPrint) / kMemoryWidth; i < N / kMemoryWidth; ++i) {
-      const auto pack = output[i];
-      for (unsigned j = 0; j < kMemoryWidth; ++j) {
-        std::cout << pack[j] << " ";
-      }
+    for (unsigned i = N_out - NumPrint; i < N_out; ++i) {
+      std::cout << output[i / kMemoryWidth][i % kMemoryWidth] << " ";
     }
     std::cout << "\nReference:\n";
-    for (unsigned i = N - NumPrint; i < N; ++i) {
+    for (unsigned i = N_out - NumPrint; i < N_out; ++i) {
       std::cout << reference_output[i] << " ";
     }
     std::cout << "\n\n";
