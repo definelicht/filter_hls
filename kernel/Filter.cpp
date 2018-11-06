@@ -45,7 +45,7 @@ void Read(MemoryPack_t const in[], Stream<MemoryPack_t> &pipe,
 void Filter(const unsigned N, const Data_t ratio, Stream<MemoryPack_t> &pipe_in,
             Stream<MemoryPackWithValid> &pipe_out, unsigned *N_out) {
 
-  constexpr int num_stages = 2 * kMemoryWidth - 1; 
+  constexpr int num_stages = 2 * kMemoryWidth; 
   using Stage_t = ap_uint<hlslib::ConstLog2(num_stages)>;
   using Count_t = ap_uint<hlslib::ConstLog2(kMemoryWidth)>;
 
